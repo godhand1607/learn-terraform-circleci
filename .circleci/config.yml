@@ -90,7 +90,7 @@ jobs:
 workflows:
   test:
     jobs:
-      - test-dev
+      - check-pr
       # - test-tf
 
 # version: 2
