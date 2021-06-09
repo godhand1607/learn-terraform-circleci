@@ -13,11 +13,13 @@ commands:
           command: |
             if [ -n $CIRCLE_PULL_REQUEST ]; then
               latest_pr=$(echo ${CIRCLE_PULL_REQUESTS##*,})
-              pr=$(echo https://api.github.com/repos/${latest_pr:19} | sed "s/\/pull\//\/pulls\//")
+              pr_number=${latest_pr:19}
+              pr=$(echo https://api.github.com/repos/${pr_number} | sed "s/\/pull\//\/pulls\//")
 
               base=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" $pr | jq '.base.ref')
 
               echo ${base}
+              echo ${pr_number}
 
               if [[ '"prod"' = "$base" ]]; then
                 echo 'export ENV="prod"' >> $BASH_ENV
