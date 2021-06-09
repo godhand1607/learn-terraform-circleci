@@ -55,6 +55,7 @@ jobs:
       - image: circleci/node:latest
     steps:
       - checkout
+      - check-pr
 
   test-tf:
     working_directory: /tmp/project
@@ -90,7 +91,7 @@ jobs:
 workflows:
   test:
     jobs:
-      - check-pr
+      - test-dev
       # - test-tf
 
 # version: 2
