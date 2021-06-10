@@ -11,11 +11,23 @@ commands:
       - run:
           name: Set ENV from Pull Request Base Branch
           command: |
-            if [ -n $CIRCLE_PULL_REQUEST ]; then
+            if [ -n $CIRCLE_PULL_REQUESTS ]; then
+              # Grab the lastest associated PR of the branch
+              # by getting the last item in the list of PRs
               latest_pr=$(echo ${CIRCLE_PULL_REQUESTS##*,})
-              pr=$(echo https://api.github.com/repos/${latest_pr:19} | sed "s/\/pull\//\/pulls\//")
 
-              base=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" $pr | jq '.base.ref')
+              # Parse the pr name/path
+              pr_name=${latest_pr:19}
+
+              # Construct the rest api url to call
+              pr_number=$(echo https://api.github.com/repos/${pr_name} | sed "s/\/pull\//\/pulls\//")
+
+              # Fetch the PR's base branch via Github API
+              base=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" $pr_number | jq '.base.ref')
+
+              echo ${latest_pr}
+              echo ${pr_name}
+              echo ${pr_number}
 
               echo ${base}
 
@@ -55,6 +67,7 @@ jobs:
       - image: circleci/node:latest
     steps:
       - checkout
+      - check-pr
 
   test-tf:
     working_directory: /tmp/project
