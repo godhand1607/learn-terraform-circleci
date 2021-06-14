@@ -2,31 +2,64 @@ version: 2.1
 
 commands:
   check-pr:
-    description: "Run API depending on branch"
+    description: "Set ENV from Pull Request Base Branch"
+    steps:
+      # - run:
+      #     name: Install curl and jq
+      #     command: |
+      #       apk add --no-cache curl jq
+      - run:
+          name: Set ENV from Pull Request Base Branch
+          command: |
+            if [ -n $CIRCLE_PULL_REQUESTS ]; then
+              # Grab the lastest associated PR of the branch
+              # by getting the last item in the list of PRs
+              latest_pr=$(echo ${CIRCLE_PULL_REQUESTS##*,})
+
+              # Parse the pr name/path
+              pr_name=${latest_pr:19}
+
+              # Construct the rest api url to call
+              pr_number=$(echo https://api.github.com/repos/${pr_name} | sed "s/\/pull\//\/pulls\//")
+
+              # Fetch the PR's base branch via Github API
+              base=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" $pr_number | jq '.base.ref')
+
+              echo ${latest_pr}
+              echo ${pr_name}
+              echo ${pr_number}
+
+              echo ${base}
+
+              if [[ '"prod"' = "$base" ]]; then
+                echo 'export ENV="prod"' >> $BASH_ENV
+                source $BASH_ENV
+              elif [[ '"stage"' = "$base" ]]; then
+                echo 'export ENV="stage"' >> $BASH_ENV
+                source $BASH_ENV
+              else
+                echo 'Unhandled base branch: "$base"'
+                exit 1
+              fi
+
+              echo ${ENV}
+            fi
+
+  tf-plan-apply:
+    description: "A very simple command for demonstration purposes"
     parameters:
-      head:
-        type: string
-      base:
-        type: string
-      run:
+      tf-project:
         type: string
     steps:
-      - when:
-          condition:
-            equal: [ << parameters.head >>, << pipeline.git.branch >> ]
-          steps:
-            - run:
-                name: Check Pull Request from << parameters.head >> to << parameters.base >>
-                command: |
-                  if [ -n $CIRCLE_PULL_REQUEST ]; then
-                    pr=$(echo https://api.github.com/repos/${CIRCLE_PULL_REQUEST:19} | sed "s/\/pull\//\/pulls\//")
+      - run:
+          name: (<< parameters.tf-project >>) terraform init & plan
+          command: |
+            source $BASH_ENV
+            cd << parameters.tf-project >>
+            terraform init -input=false
+            terraform workspace select $ENV || terraform workspace new $ENV
+            terraform plan -out tfapply -var-file variables.tfvars
 
-                    base=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" $pr | jq '.base.ref')
-
-                    if [[ '"<< parameters.base >>"' = "$base" ]]; then
-                      << parameters.run >>
-                    fi
-                  fi
 
 jobs:
   test-dev:
@@ -34,17 +67,44 @@ jobs:
       - image: circleci/node:latest
     steps:
       - checkout
-      - check-pr:
-          base: master
-          head: dev
-          run: |
-              echo "hello world!"
-              # implement features here!
+      - check-pr
+
+  test-tf:
+    working_directory: /tmp/project
+    docker:
+      - image: docker.mirror.hashicorp.services/hashicorp/terraform:light
+    steps:
+      - checkout
+      - run:
+          name: "What branch am I on?"
+          command: |
+            echo ${CIRCLE_BRANCH}
+      - run:
+          name: "Setup ENV from branch name"
+          command: |
+            if [[ "$CIRCLE_BRANCH" =~ ^release\/prod* ]];
+            then
+              echo 'export ENV=prod' >> $BASH_ENV
+            else
+              echo 'export ENV=stage' >> $BASH_ENV
+            fi
+
+            source $BASH_ENV
+            echo ${ENV}
+      - tf-plan-apply:
+          tf-project: api
+      - tf-plan-apply:
+          tf-project: webapp
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .
 
 workflows:
   test:
     jobs:
       - test-dev
+      # - test-tf
 
 # version: 2
 
